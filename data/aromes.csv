@@ -1,32 +1,31 @@
-
-id,nom,famille,notes,applications,sucrosite,tenue_chaleur,certifications,prix_indicatif_eur_kg,delai_jours,volume_minimum_kg,is_synthetic
-A001,Vanille douce,Gourmand,Vanille crÃ©meuse et ronde,Biscuit glace boisson,5,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,25,14,5,TRUE
-A002,Citron frais,Agrume,Zeste citronnÃ© frais,Boisson confiserie,1,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,18,10,5,TRUE
-A003,Fraise mÃ»re,Fruit rouge,Fraise sucrÃ©e et juteuse,Yaourt boisson confiserie,5,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,22,12,5,TRUE
-A004,Framboise,Fruit rouge,Framboise acidulÃ©e et fruitÃ©e,Boisson dessert,3,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,24,12,5,TRUE
-A005,Orange douce,Agrume,Orange mÃ»re et zestÃ©e,Boisson biscuit,3,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,17,10,5,TRUE
-A006,Pomme verte,Fruit,Note verte croquante,Boisson confiserie,2,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,16,10,5,TRUE
-A007,Poire,Fruit,Poire juteuse et douce,Boisson dessert,4,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,20,12,5,TRUE
-A008,Mangue tropicale,Fruit exotique,Mangue mÃ»re et pulpeuse,Boisson yaourt,4,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,23,14,5,TRUE
-A009,Ananas,Fruit exotique,Ananas acidulÃ© et frais,Boisson confiserie,3,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,19,12,5,TRUE
-A010,Coco douce,Gourmand,Lait de coco crÃ©meux,Dessert biscuit,5,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,26,14,5,TRUE
-A011,Caramel,FÃ©culent gourmand,Caramel rond et cuit,Biscuit glace,5,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,21,12,5,TRUE
-A012,Chocolat noir,Cacao,Cacao intense et amer,Biscuit dessert,2,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,28,14,5,TRUE
-A013,Chocolat au lait,Cacao,Cacao doux et lactÃ©,Dessert boisson,4,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,27,14,5,TRUE
-A014,CafÃ© torrÃ©fiÃ©,TorrÃ©fiÃ©,CafÃ© grillÃ© et puissant,Boisson biscuit,1,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,24,12,5,TRUE
-A015,Noisette,Fruit Ã  coque,Noisette grillÃ©e et ronde,Biscuit chocolat,3,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,25,14,5,TRUE
-A016,Amande,Fruit Ã  coque,Amande douce et lÃ©gÃ¨rement grillÃ©e,Biscuit dessert,3,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,22,12,5,TRUE
-A017,Miel,Fleuri gourmand,Miel floral et rond,Boisson biscuit,5,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,20,12,5,TRUE
-A018,Menthe fraÃ®che,HerbacÃ©,Menthe fraÃ®che et intense,Confiserie boisson,1,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,18,10,5,TRUE
-A019,Basilic,HerbacÃ©,Basilic vert et aromatique,Boisson sauce,1,Faible,Aucune revendiquÃ©e - Ã  vÃ©rifier,19,12,5,TRUE
-A020,Gingembre,Ã‰picÃ©,Gingembre frais et piquant,Boisson confiserie,1,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,21,12,5,TRUE
-A021,Cannelle,Ã‰picÃ©,Cannelle chaude et boisÃ©e,Biscuit boisson,3,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,20,12,5,TRUE
-A022,Cardamome,Ã‰picÃ©,Cardamome fraÃ®che et Ã©picÃ©e,Boisson biscuit,1,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,29,14,5,TRUE
-A023,ThÃ© vert,VÃ©gÃ©tal,ThÃ© vert vÃ©gÃ©tal et lÃ©gÃ¨rement amer,Boisson dessert,1,Faible,Aucune revendiquÃ©e - Ã  vÃ©rifier,23,12,5,TRUE
-A024,ThÃ© noir,Infusion,ThÃ© noir corsÃ© et tannique,Boisson biscuit,1,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,22,12,5,TRUE
-A025,Caramel beurre salÃ©,Gourmand,Caramel crÃ©meux et salin,Dessert glace,5,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,26,14,5,TRUE
-A026,Barbe Ã  papa,Confiserie,Sucre filÃ© doux et aÃ©rien,Confiserie glace,5,Faible,Aucune revendiquÃ©e - Ã  vÃ©rifier,18,10,5,TRUE
-A027,Cola,Boisson,Cola Ã©picÃ© et citronnÃ©,Boisson confiserie,3,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,19,12,5,TRUE
-A028,Yaourt,Frais lactÃ©,Note lactÃ©e et acidulÃ©e,Yaourt dessert,2,Moyenne,Aucune revendiquÃ©e - Ã  vÃ©rifier,20,12,5,TRUE
-A029,Beurre frais,LactÃ©,Beurre doux et crÃ©meux,Biscuit sauce,3,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,22,12,5,TRUE
-A030,Pop-corn grillÃ©,TorrÃ©fiÃ©,MaÃ¯s soufflÃ© et grillÃ©,Snack biscuit,2,Bonne,Aucune revendiquÃ©e - Ã  vÃ©rifier,21,12,5,TRUE
+﻿id,nom,famille,notes,applications,sucrosite,tenue_chaleur,certifications,prix_indicatif_eur_kg,delai_jours,volume_minimum_kg,is_synthetic
+A001,Vanille douce,Gourmand,Vanille crémeuse et ronde,Biscuit glace boisson,5,Moyenne,Aucune revendiquée - à vérifier,25,14,5,TRUE
+A002,Citron frais,Agrume,Zeste citronné frais,Boisson confiserie,1,Bonne,Aucune revendiquée - à vérifier,18,10,5,TRUE
+A003,Fraise mûre,Fruit rouge,Fraise sucrée et juteuse,Yaourt boisson confiserie,5,Moyenne,Aucune revendiquée - à vérifier,22,12,5,TRUE
+A004,Framboise,Fruit rouge,Framboise acidulée et fruitée,Boisson dessert,3,Moyenne,Aucune revendiquée - à vérifier,24,12,5,TRUE
+A005,Orange douce,Agrume,Orange mûre et zestée,Boisson biscuit,3,Bonne,Aucune revendiquée - à vérifier,17,10,5,TRUE
+A006,Pomme verte,Fruit,Note verte croquante,Boisson confiserie,2,Moyenne,Aucune revendiquée - à vérifier,16,10,5,TRUE
+A007,Poire,Fruit,Poire juteuse et douce,Boisson dessert,4,Moyenne,Aucune revendiquée - à vérifier,20,12,5,TRUE
+A008,Mangue tropicale,Fruit exotique,Mangue mûre et pulpeuse,Boisson yaourt,4,Moyenne,Aucune revendiquée - à vérifier,23,14,5,TRUE
+A009,Ananas,Fruit exotique,Ananas acidulé et frais,Boisson confiserie,3,Bonne,Aucune revendiquée - à vérifier,19,12,5,TRUE
+A010,Coco douce,Gourmand,Lait de coco crémeux,Dessert biscuit,5,Moyenne,Aucune revendiquée - à vérifier,26,14,5,TRUE
+A011,Caramel,Féculent gourmand,Caramel rond et cuit,Biscuit glace,5,Bonne,Aucune revendiquée - à vérifier,21,12,5,TRUE
+A012,Chocolat noir,Cacao,Cacao intense et amer,Biscuit dessert,2,Bonne,Aucune revendiquée - à vérifier,28,14,5,TRUE
+A013,Chocolat au lait,Cacao,Cacao doux et lacté,Dessert boisson,4,Moyenne,Aucune revendiquée - à vérifier,27,14,5,TRUE
+A014,Café torréfié,Torréfié,Café grillé et puissant,Boisson biscuit,1,Bonne,Aucune revendiquée - à vérifier,24,12,5,TRUE
+A015,Noisette,Fruit à coque,Noisette grillée et ronde,Biscuit chocolat,3,Bonne,Aucune revendiquée - à vérifier,25,14,5,TRUE
+A016,Amande,Fruit à coque,Amande douce et légèrement grillée,Biscuit dessert,3,Bonne,Aucune revendiquée - à vérifier,22,12,5,TRUE
+A017,Miel,Fleuri gourmand,Miel floral et rond,Boisson biscuit,5,Moyenne,Aucune revendiquée - à vérifier,20,12,5,TRUE
+A018,Menthe fraîche,Herbacé,Menthe fraîche et intense,Confiserie boisson,1,Moyenne,Aucune revendiquée - à vérifier,18,10,5,TRUE
+A019,Basilic,Herbacé,Basilic vert et aromatique,Boisson sauce,1,Faible,Aucune revendiquée - à vérifier,19,12,5,TRUE
+A020,Gingembre,Ã‰picé,Gingembre frais et piquant,Boisson confiserie,1,Moyenne,Aucune revendiquée - à vérifier,21,12,5,TRUE
+A021,Cannelle,Ã‰picé,Cannelle chaude et boisée,Biscuit boisson,3,Bonne,Aucune revendiquée - à vérifier,20,12,5,TRUE
+A022,Cardamome,Ã‰picé,Cardamome fraîche et épicée,Boisson biscuit,1,Moyenne,Aucune revendiquée - à vérifier,29,14,5,TRUE
+A023,Thé vert,Végétal,Thé vert végétal et légèrement amer,Boisson dessert,1,Faible,Aucune revendiquée - à vérifier,23,12,5,TRUE
+A024,Thé noir,Infusion,Thé noir corsé et tannique,Boisson biscuit,1,Bonne,Aucune revendiquée - à vérifier,22,12,5,TRUE
+A025,Caramel beurre salé,Gourmand,Caramel crémeux et salin,Dessert glace,5,Moyenne,Aucune revendiquée - à vérifier,26,14,5,TRUE
+A026,Barbe à papa,Confiserie,Sucre filé doux et aérien,Confiserie glace,5,Faible,Aucune revendiquée - à vérifier,18,10,5,TRUE
+A027,Cola,Boisson,Cola épicé et citronné,Boisson confiserie,3,Bonne,Aucune revendiquée - à vérifier,19,12,5,TRUE
+A028,Yaourt,Frais lacté,Note lactée et acidulée,Yaourt dessert,2,Moyenne,Aucune revendiquée - à vérifier,20,12,5,TRUE
+A029,Beurre frais,Lacté,Beurre doux et crémeux,Biscuit sauce,3,Bonne,Aucune revendiquée - à vérifier,22,12,5,TRUE
+A030,Pop-corn grillé,Torréfié,Maïs soufflé et grillé,Snack biscuit,2,Bonne,Aucune revendiquée - à vérifier,21,12,5,TRUE

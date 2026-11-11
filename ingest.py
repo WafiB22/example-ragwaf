@@ -1,114 +1,200 @@
 
-"""Indexe la documentation aromatique dans ChromaDB.
+"""Indexe le catalogue CSV et les documents métier dans ChromaDB."""
 
-Structure attendue :
-data/
-    knowledge/
-        familles_aromatiques.txt
-        notes_sensorielles.txt
-        applications.txt
-
-Lancement :
-    python ingest.py
-"""
-
-import hashlib
+import csv
 import re
 from pathlib import Path
 
 import config
 import rag
 
+BASE_DIR = Path(__file__).parent
+CSV_PATH = BASE_DIR / "data" / "aromes.csv"
+KNOWLEDGE_DIR = BASE_DIR / "data" / "knowledge"
 
-# Dossier contenant les connaissances aromatiques
-KNOWLEDGE_DIR = Path(__file__).parent / "data" / "knowledge"
+REQUIRED_COLUMNS = {
+    "id", "nom", "famille", "notes", "applications",
+    "sucrosite", "tenue_chaleur", "certifications",
+    "prix_indicatif_eur_kg", "delai_jours",
+    "volume_minimum_kg", "is_synthetic",
+}
 
-# Taille maximale indicative d'un passage
-CHUNK_SIZE = getattr(config, "CHUNK_SIZE", 1000)
+
+def build_aroma_document(row: dict) -> str:
+    """Construit une description textuelle de chaque arôme."""
+    return (
+        f"Arôme : {row['nom']}. "
+        f"Famille : {row['famille']}. "
+        f"Notes : {row['notes']}. "
+        f"Applications : {row['applications']}. "
+        f"Sucrosité : {row['sucrosite']}. "
+        f"Tenue à la chaleur : {row['tenue_chaleur']}. "
+        f"Certifications : {row['certifications']}. "
+        f"Prix indicatif : {row['prix_indicatif_eur_kg']} euros/kg. "
+        f"Délai : {row['delai_jours']} jours. "
+        f"Volume minimum : {row['volume_minimum_kg']} kg."
+    )
 
 
-def split_into_chunks(text: str) -> list[str]:
-    """Découpe un document en passages adaptés à la recherche."""
+def read_csv() -> list[dict]:
+    """Lit le catalogue CSV en détectant son séparateur."""
+    if not CSV_PATH.exists():
+        raise FileNotFoundError(f"Catalogue introuvable : {CSV_PATH}")
 
+    with CSV_PATH.open("r", encoding="utf-8-sig", newline="") as file:
+        sample = file.read(4096)
+        file.seek(0)
+
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+        except csv.Error:
+            dialect = csv.excel
+            dialect.delimiter = ","
+
+        reader = csv.DictReader(file, dialect=dialect)
+
+        if not reader.fieldnames:
+            raise ValueError("Impossible de lire l'en-tête du CSV.")
+
+        reader.fieldnames = [
+            name.strip().lstrip("\ufeff") for name in reader.fieldnames
+        ]
+
+        missing = REQUIRED_COLUMNS - set(reader.fieldnames)
+        if missing:
+            raise ValueError(
+                f"Colonnes manquantes : {sorted(missing)}. "
+                f"Colonnes détectées : {reader.fieldnames}"
+            )
+
+        return list(reader)
+
+
+def split_text(text: str, max_chars: int = 800) -> list[str]:
+    """Découpe un document en morceaux."""
     paragraphs = [
-        p.strip()
-        for p in re.split(r"\n\s*\n", text)
-        if p.strip()
+        re.sub(r"\s+", " ", paragraph).strip()
+        for paragraph in text.splitlines()
+        if paragraph.strip()
     ]
 
     chunks = []
-    current = []
-    current_size = 0
+    current = ""
 
     for paragraph in paragraphs:
-        if current and current_size + len(paragraph) > CHUNK_SIZE:
-            chunks.append("\n\n".join(current))
-            current = []
-            current_size = 0
+        if len(paragraph) > max_chars:
+            if current:
+                chunks.append(current)
+                current = ""
 
-        current.append(paragraph)
-        current_size += len(paragraph)
+            for start in range(0, len(paragraph), max_chars):
+                chunks.append(paragraph[start:start + max_chars])
+            continue
+
+        candidate = f"{current}\n{paragraph}" if current else paragraph
+
+        if len(candidate) > max_chars:
+            if current:
+                chunks.append(current)
+            current = paragraph
+        else:
+            current = candidate
 
     if current:
-        chunks.append("\n\n".join(current))
+        chunks.append(current)
 
     return chunks
 
 
-def main():
-    """Charge et indexe tous les documents aromatiques."""
+def load_aromas():
+    """Prépare les documents du catalogue."""
+    rows = read_csv()
+    documents = []
+    ids = []
+    metadatas = []
 
+    for row in rows:
+        source_id = (row.get("id") or "").strip()
+
+        if not source_id:
+            continue
+
+        documents.append(build_aroma_document(row))
+        ids.append(source_id)
+
+        is_synthetic = (
+            (row.get("is_synthetic") or "").strip().lower()
+            in ("true", "1", "yes", "oui")
+        )
+
+        metadatas.append({
+            "source_type": "arome",
+            "source_id": source_id,
+            "is_synthetic": is_synthetic,
+        })
+
+    return ids, documents, metadatas
+
+
+def load_knowledge_documents():
+    """Prépare tous les fichiers texte du dossier knowledge."""
     if not KNOWLEDGE_DIR.exists():
-        KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
-        print(f"Dossier créé : {KNOWLEDGE_DIR}")
-        print("Ajoute des fichiers .txt dans ce dossier puis relance.")
-        return
-
-    files = sorted(KNOWLEDGE_DIR.glob("*.txt"))
-
-    if not files:
-        print("Aucun document .txt trouvé dans data/knowledge.")
-        return
+        raise FileNotFoundError(
+            f"Dossier de connaissances introuvable : {KNOWLEDGE_DIR}"
+        )
 
     ids = []
     documents = []
     metadatas = []
 
-    for path in files:
-        text = path.read_text(encoding="utf-8").strip()
+    for file_path in sorted(KNOWLEDGE_DIR.glob("*.txt")):
+        content = file_path.read_text(encoding="utf-8-sig").strip()
 
-        if not text:
-            print(f"Document vide ignoré : {path.name}")
+        if not content:
+            print(f"Document vide ignoré : {file_path.name}")
             continue
 
-        chunks = split_into_chunks(text)
+        chunks = split_text(content)
 
         for index, chunk in enumerate(chunks):
-            unique_text = f"{path.name}-{index}-{chunk}"
-            chunk_id = hashlib.sha256(
-                unique_text.encode("utf-8")
-            ).hexdigest()
+            source_id = f"knowledge_{file_path.stem}_{index}"
 
-            ids.append(chunk_id)
+            ids.append(source_id)
             documents.append(chunk)
 
             metadatas.append({
-                "source": path.name,
-                "category": "aromatic_knowledge",
-                "chunk_index": index,
+                "source_type": "document",
+                "source_id": source_id,
+                "is_synthetic": True,
             })
 
-        print(f"{path.name} : {len(chunks)} passages")
+        print(
+            f"Document chargé : {file_path.name} "
+            f"({len(chunks)} morceaux)"
+        )
+
+    return ids, documents, metadatas
+
+
+def main():
+    aroma_ids, aroma_docs, aroma_meta = load_aromas()
+    knowledge_ids, knowledge_docs, knowledge_meta = (
+        load_knowledge_documents()
+    )
+
+    ids = aroma_ids + knowledge_ids
+    documents = aroma_docs + knowledge_docs
+    metadatas = aroma_meta + knowledge_meta
 
     if not documents:
-        print("Aucun passage à indexer.")
-        return
+        raise ValueError("Aucun document à indexer.")
 
-    print(f"\nTotal : {len(documents)} passages")
+    print(f"\nArômes : {len(aroma_docs)}")
+    print(f"Documents métier : {len(knowledge_docs)}")
+    print(f"Total à indexer : {len(documents)}")
     print(f"Calcul des embeddings avec {config.EMBED_MODEL}...")
 
     embeddings = rag.embed_documents(documents)
-
     collection = rag.get_collection()
 
     collection.upsert(
@@ -120,7 +206,7 @@ def main():
 
     print("\nIndexation terminée !")
     print(f"Collection : {config.COLLECTION_NAME}")
-    print(f"Nombre total de passages : {collection.count()}")
+    print(f"Nombre total de documents : {collection.count()}")
     print(f"Emplacement : {config.CHROMA_DIR}")
 
 

@@ -1,138 +1,122 @@
 
-"""Moteur RAG spécialisé dans les arômes et les saveurs."""
-
-from __future__ import annotations
+"""Gestion du RAG avec Ollama et ChromaDB."""
 
 import chromadb
 import ollama
 
 import config
 
-_ollama = ollama.Client(host=config.OLLAMA_HOST)
 
 SYSTEM_PROMPT = """
-Tu es Olfactive Studio, un assistant expert en arômes et saveurs
-destiné aux professionnels de l'industrie alimentaire.
+Tu es Olfactive Studio, un assistant expert en arômes alimentaires.
 
-Ton rôle :
-- Comprendre les descriptions sensorielles des clients.
-- Identifier les familles aromatiques et les notes pertinentes.
-- Expliquer les caractéristiques des arômes.
-- Proposer des pistes de création adaptées aux applications demandées.
+Tu aides les clients à préciser leur besoin et à comprendre
+les informations disponibles dans le catalogue.
 
-Règles :
-- Utilise prioritairement les informations des documents retrouvés.
-- Ne prétends jamais connaître une information absente des documents.
-- Ne fabrique pas de certifications, de prix ou de caractéristiques techniques.
-- Les données du catalogue de démonstration sont synthétiques.
-- Ne présente jamais une suggestion comme une formule industrielle validée.
-- Les dosages, la sécurité et la conformité doivent être validés par le laboratoire.
-- Réponds en français, de manière claire et professionnelle.
+RÈGLES :
+1. Utilise uniquement les informations fournies.
+2. N'invente jamais de prix, délais, certifications ou caractéristiques.
+3. Ne suppose jamais le budget du client.
+4. Ne confonds pas fraîcheur sensorielle et tenue à la chaleur.
+5. Ne présente jamais une recommandation comme une formule
+   industrielle validée.
+6. Les données is_synthetic=true sont fictives et doivent être
+   signalées lorsqu'elles sont présentées.
+7. Si une information essentielle manque, pose une question
+   courte et précise.
+8. Pose une seule question à la fois.
+9. Ne redemande pas une information déjà donnée.
+10. Réponds en français avec un ton professionnel et naturel.
 """
 
 
-def get_chroma_client() -> chromadb.ClientAPI:
-    """Ouvre la base vectorielle persistante."""
+def get_chroma_client():
+    config.CHROMA_DIR.mkdir(parents=True, exist_ok=True)
     return chromadb.PersistentClient(path=str(config.CHROMA_DIR))
 
 
-def get_collection(client: chromadb.ClientAPI | None = None):
-    """Récupère ou crée la collection documentaire aromatique."""
-    client = client or get_chroma_client()
-
+def get_collection():
+    client = get_chroma_client()
     return client.get_or_create_collection(
         name=config.COLLECTION_NAME,
-        metadata={
-            "hnsw:space": "cosine",
-            "embed_model": config.EMBED_MODEL,
-        },
+        metadata={"hnsw:space": "cosine"},
     )
 
 
-def embed(texts: list[str], prefix: str = "") -> list[list[float]]:
-    """Calcule les embeddings avec Ollama."""
-    inputs = [prefix + text for text in texts]
+def embed_documents(documents: list[str]) -> list[list[float]]:
+    embeddings = []
 
-    response = _ollama.embed(
+    for document in documents:
+        response = ollama.embeddings(
+            model=config.EMBED_MODEL,
+            prompt=document,
+        )
+        embeddings.append(response["embedding"])
+
+    return embeddings
+
+
+def embed_query(question: str) -> list[float]:
+    response = ollama.embeddings(
         model=config.EMBED_MODEL,
-        input=inputs,
+        prompt=question,
     )
-
-    return response["embeddings"]
-
-
-def _uses_nomic_prefixes() -> bool:
-    return "nomic" in config.EMBED_MODEL.lower()
+    return response["embedding"]
 
 
-def embed_documents(texts: list[str]) -> list[list[float]]:
-    """Transforme les documents en vecteurs."""
-    prefix = "search_document: " if _uses_nomic_prefixes() else ""
-    return embed(texts, prefix)
-
-
-def embed_query(text: str) -> list[float]:
-    """Transforme une question client en vecteur."""
-    prefix = "search_query: " if _uses_nomic_prefixes() else ""
-    return embed([text], prefix)[0]
-
-
-def search_documents(query: str, top_k: int = 5) -> list[dict]:
-    """Recherche les documents aromatiques les plus pertinents."""
-
+def search_documents(
+    question: str,
+    top_k: int | None = None,
+) -> list[dict]:
     collection = get_collection()
 
     if collection.count() == 0:
         return []
 
-    result = collection.query(
-        query_embeddings=[embed_query(query)],
-        n_results=min(top_k, collection.count()),
+    query_embedding = embed_query(question)
+
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=min(top_k or config.TOP_K, collection.count()),
         include=["documents", "metadatas", "distances"],
     )
 
     documents = []
 
-    for doc, metadata, distance in zip(
-        result["documents"][0],
-        result["metadatas"][0],
-        result["distances"][0],
-    ):
+    for index, document in enumerate(results["documents"][0]):
+        metadata = results["metadatas"][0][index]
+        distance = results["distances"][0][index]
+
         documents.append({
-            "text": doc,
+            "text": document,
             "metadata": metadata,
-            "score": round(1 - distance, 4),
+            "score": max(0.0, 1.0 - distance),
         })
 
     return documents
 
 
 def chat(messages: list[dict]) -> str:
-    """Envoie une conversation au modèle Ollama."""
-
-    response = _ollama.chat(
+    response = ollama.chat(
         model=config.LLM_MODEL,
         messages=messages,
-        options={"temperature": 0.2},
+        options={"temperature": 0},
     )
 
-    return response["message"]["content"]
+    return response["message"]["content"].strip()
 
 
-def answer_question(question: str, top_k: int = 5) -> dict:
-    """Recherche les connaissances et génère une réponse aromatique."""
-
+def answer_question(
+    question: str,
+    top_k: int | None = None,
+) -> str:
     documents = search_documents(question, top_k)
 
     if not documents:
-        return {
-            "question": question,
-            "answer": (
-                "Je ne dispose pas encore de documentation aromatique "
-                "suffisante pour répondre à cette demande."
-            ),
-            "sources": [],
-        }
+        return (
+            "Je ne dispose pas de données suffisantes "
+            "pour répondre à cette demande."
+        )
 
     context = "\n\n---\n\n".join(
         document["text"] for document in documents
@@ -146,17 +130,11 @@ def answer_question(question: str, top_k: int = 5) -> dict:
         {
             "role": "user",
             "content": (
-                f"Documentation aromatique retrouvée :\n\n{context}\n\n"
-                f"Demande du client : {question}\n\n"
-                "Réponds en t'appuyant sur cette documentation."
+                f"Informations disponibles :\n{context}\n\n"
+                f"Question : {question}\n\n"
+                "Réponds uniquement à partir des informations fournies."
             ),
         },
     ]
 
-    answer = chat(messages)
-
-    return {
-        "question": question,
-        "answer": answer.strip(),
-        "sources": documents,
-    }
+    return chat(messages)

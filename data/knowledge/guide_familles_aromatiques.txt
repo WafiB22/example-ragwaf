@@ -1,0 +1,134 @@
+﻿GUIDE MÉTIER — FAMILLES AROMATIQUES
+Projet : Olfactive Studio
+Version : 1.0
+
+IMPORTANT
+Ce document constitue une documentation générale de démonstration.
+Les caractéristiques d'un arôme dépendent de sa composition, de son dosage,
+de sa matrice alimentaire et de son procédé de fabrication.
+
+1. FAMILLE AGRUMES
+
+Exemples : citron, orange, pamplemousse, mandarine, bergamote.
+
+Profil sensoriel :
+- Notes fraîches, zestées et acidulées.
+- Impression de fraîcheur et de vivacité.
+- Certaines notes peuvent être amères ou florales.
+
+Applications possibles :
+- Boissons rafraîchissantes.
+- Confiseries.
+- Produits laitiers.
+- Desserts et pâtisseries.
+
+2. FAMILLE FRUITS ROUGES
+
+Exemples : fraise, framboise, cerise, cassis, groseille.
+
+Profil sensoriel :
+- Notes fruitées, sucrées ou acidulées.
+- Profils parfois confiturés, mûrs ou frais.
+- Le cassis peut présenter des notes végétales.
+
+Applications possibles :
+- Boissons.
+- Yaourts et desserts lactés.
+- Confiseries.
+- Préparations fruitées.
+
+3. FAMILLE FRUITS EXOTIQUES
+
+Exemples : mangue, ananas, fruit de la passion, litchi, goyave.
+
+Profil sensoriel :
+- Notes fruitées, tropicales et souvent intenses.
+- Profils parfois pulpeux, acidulés ou floraux.
+
+Applications possibles :
+- Boissons tropicales.
+- Desserts.
+- Produits laitiers.
+- Confiseries.
+
+4. FAMILLE GOURMANDE
+
+Exemples : vanille, caramel, chocolat, biscuit, noisette.
+
+Profil sensoriel :
+- Notes rondes, douces et enveloppantes.
+- Impressions crémeuses, grillées ou sucrées.
+- Certains profils rappellent la pâtisserie.
+
+Applications possibles :
+- Biscuits et pâtisseries.
+- Glaces.
+- Desserts lactés.
+- Confiseries et boissons gourmandes.
+
+5. FAMILLE FLORALE
+
+Exemples : rose, jasmin, fleur d'oranger, violette, lavande.
+
+Profil sensoriel :
+- Notes florales, délicates ou parfumées.
+- Profils parfois frais, poudrés ou miellés.
+
+Applications possibles :
+- Confiseries.
+- Boissons aromatisées.
+- Desserts.
+
+6. FAMILLE ÉPICÉE
+
+Exemples : cannelle, gingembre, cardamome, clou de girofle.
+
+Profil sensoriel :
+- Notes chaudes, intenses ou piquantes.
+- Profils parfois boisés, poivrés ou sucrés.
+
+Applications possibles :
+- Biscuits et pâtisseries.
+- Boissons chaudes.
+- Confiseries.
+- Desserts.
+
+7. FAMILLE MENTHOLÉE ET FRAÎCHE
+
+Exemples : menthe verte, menthe poivrée, eucalyptus.
+
+Profil sensoriel :
+- Notes fraîches et parfois mentholées.
+- Sensation de fraîcheur en bouche.
+- Certains profils sont végétaux.
+
+Applications possibles :
+- Confiseries.
+- Chewing-gums.
+- Boissons.
+
+8. CRITÈRES DE SÉLECTION D'UN ARÔME
+
+Pour recommander un arôme, prendre en compte :
+- La famille aromatique recherchée.
+- Les notes sensorielles souhaitées.
+- L'application alimentaire finale.
+- Le niveau de sucrosité recherché.
+- La tenue à la chaleur si un traitement thermique est prévu.
+- Le prix indicatif.
+- Le délai d'approvisionnement.
+- Le volume minimum de commande.
+- Les certifications réellement documentées.
+
+9. RÈGLES DE RECOMMANDATION
+
+- Privilégier les arômes dont les notes correspondent à la demande.
+- Vérifier que l'application figure dans les données disponibles.
+- Ne jamais inventer de prix, de délai ou de certification.
+- Ne pas déduire la tenue à la chaleur de la seule famille aromatique.
+- Signaler les informations manquantes.
+- Présenter les données marquées is_synthetic = true comme synthétiques.
+- Ne jamais présenter une suggestion comme une formule industrielle validée.
+- Faire valider les dosages, la sécurité et la conformité par le laboratoire.
+
+FIN DU DOCUMENT
