@@ -1,91 +1,127 @@
-"""Charge story.txt dans la base vectorielle.
 
-Usage :
-    python ingest.py                 # charge story.txt
-    python ingest.py autre_histoire.txt
+"""Indexe la documentation aromatique dans ChromaDB.
+
+Structure attendue :
+data/
+    knowledge/
+        familles_aromatiques.txt
+        notes_sensorielles.txt
+        applications.txt
+
+Lancement :
+    python ingest.py
 """
 
+import hashlib
 import re
-import sys
 from pathlib import Path
 
 import config
 import rag
 
-# Un titre de chapitre ressemble à "IV. Le Sanctuaire Brisé" ou "Chapitre 1 : Le Grand Départ"
-CHAPTER_RE = re.compile(r"^(?:[IVXLC]+\.\s+\S|chapitre\s+\w+\b)", re.IGNORECASE)
+
+# Dossier contenant les connaissances aromatiques
+KNOWLEDGE_DIR = Path(__file__).parent / "data" / "knowledge"
+
+# Taille maximale indicative d'un passage
+CHUNK_SIZE = getattr(config, "CHUNK_SIZE", 1000)
 
 
-def split_into_sections(text: str) -> tuple[str, list[tuple[str, list[str]]]]:
-    """Retourne (titre de l'histoire, [(titre du chapitre, [paragraphes])])."""
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
-    title = ""
-    if paragraphs and not CHAPTER_RE.match(paragraphs[0]):
-        title = paragraphs.pop(0)
+def split_into_chunks(text: str) -> list[str]:
+    """Découpe un document en passages adaptés à la recherche."""
 
-    sections: list[tuple[str, list[str]]] = []
-    current_title, current = "Introduction", []
-    for p in paragraphs:
-        if CHAPTER_RE.match(p) and len(p) < 120:
-            if current:
-                sections.append((current_title, current))
-            current_title, current = p, []
-        else:
-            current.append(p)
-    if current:
-        sections.append((current_title, current))
-    return title, sections
+    paragraphs = [
+        p.strip()
+        for p in re.split(r"\n\s*\n", text)
+        if p.strip()
+    ]
 
+    chunks = []
+    current = []
+    current_size = 0
 
-def chunk_paragraphs(paragraphs: list[str]) -> list[str]:
-    """Regroupe les paragraphes en morceaux de ~CHUNK_SIZE caractères,
-    avec un chevauchement de CHUNK_OVERLAP_PARAGRAPHS paragraphe(s)."""
-    chunks: list[str] = []
-    current: list[str] = []
-    size = 0
-    for p in paragraphs:
-        if current and size + len(p) > config.CHUNK_SIZE:
+    for paragraph in paragraphs:
+        if current and current_size + len(paragraph) > CHUNK_SIZE:
             chunks.append("\n\n".join(current))
-            overlap = current[-config.CHUNK_OVERLAP_PARAGRAPHS:] if config.CHUNK_OVERLAP_PARAGRAPHS else []
-            current = list(overlap)
-            size = sum(len(x) for x in current)
-        current.append(p)
-        size += len(p)
+            current = []
+            current_size = 0
+
+        current.append(paragraph)
+        current_size += len(paragraph)
+
     if current:
         chunks.append("\n\n".join(current))
+
     return chunks
 
 
-def main() -> None:
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else config.STORY_PATH
-    text = path.read_text(encoding="utf-8")
-    story_title, sections = split_into_sections(text)
+def main():
+    """Charge et indexe tous les documents aromatiques."""
 
-    ids, documents, metadatas = [], [], []
-    for chap_idx, (chapter, paragraphs) in enumerate(sections):
-        for chunk_idx, chunk in enumerate(chunk_paragraphs(paragraphs)):
-            ids.append(f"{path.stem}-{chap_idx:02d}-{chunk_idx:03d}")
+    if not KNOWLEDGE_DIR.exists():
+        KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"Dossier créé : {KNOWLEDGE_DIR}")
+        print("Ajoute des fichiers .txt dans ce dossier puis relance.")
+        return
+
+    files = sorted(KNOWLEDGE_DIR.glob("*.txt"))
+
+    if not files:
+        print("Aucun document .txt trouvé dans data/knowledge.")
+        return
+
+    ids = []
+    documents = []
+    metadatas = []
+
+    for path in files:
+        text = path.read_text(encoding="utf-8").strip()
+
+        if not text:
+            print(f"Document vide ignoré : {path.name}")
+            continue
+
+        chunks = split_into_chunks(text)
+
+        for index, chunk in enumerate(chunks):
+            unique_text = f"{path.name}-{index}-{chunk}"
+            chunk_id = hashlib.sha256(
+                unique_text.encode("utf-8")
+            ).hexdigest()
+
+            ids.append(chunk_id)
             documents.append(chunk)
+
             metadatas.append({
                 "source": path.name,
-                "story_title": story_title,
-                "chapter": chapter,
-                "chapter_index": chap_idx,
-                "chunk_index": chunk_idx,
+                "category": "aromatic_knowledge",
+                "chunk_index": index,
             })
 
-    print(f"Histoire : {story_title or path.name}")
-    print(f"{len(sections)} chapitres, {len(documents)} morceaux à indexer")
-    print(f"Calcul des embeddings avec '{config.EMBED_MODEL}'...")
+        print(f"{path.name} : {len(chunks)} passages")
 
-    # Le titre du chapitre est ajouté au texte embarqué pour aider la recherche
-    to_embed = [f"{m['chapter']}\n{d}" for d, m in zip(documents, metadatas)]
-    embeddings = rag.embed_documents(to_embed)
+    if not documents:
+        print("Aucun passage à indexer.")
+        return
+
+    print(f"\nTotal : {len(documents)} passages")
+    print(f"Calcul des embeddings avec {config.EMBED_MODEL}...")
+
+    embeddings = rag.embed_documents(documents)
 
     collection = rag.get_collection()
-    collection.upsert(ids=ids, documents=documents, metadatas=metadatas, embeddings=embeddings)
-    print(f"OK : {collection.count()} morceaux dans la collection '{config.COLLECTION_NAME}' "
-          f"({config.CHROMA_DIR})")
+
+    collection.upsert(
+        ids=ids,
+        documents=documents,
+        metadatas=metadatas,
+        embeddings=embeddings,
+    )
+
+    print("\nIndexation terminée !")
+    print(f"Collection : {config.COLLECTION_NAME}")
+    print(f"Nombre total de passages : {collection.count()}")
+    print(f"Emplacement : {config.CHROMA_DIR}")
 
 
 if __name__ == "__main__":
