@@ -35,7 +35,7 @@ logger = logging.getLogger("olfactive_studio")
 app = FastAPI(
     title="Olfactive Studio API",
     description="Assistant aromatique conversationnel avec RAG.",
-    version="6.0.0",
+    version="6.2.0",
 )
 
 
@@ -167,7 +167,6 @@ def detect_family(question: str) -> str | None:
         "bouillon": "Notes salées",
     }
 
-    # Les mots-clés les plus longs sont testés en premier.
     for keyword in sorted(families, key=len, reverse=True):
         if keyword in q:
             return families[keyword]
@@ -206,23 +205,94 @@ def detect_application(question: str) -> str | None:
 def detect_sweetness_filter(question: str) -> list[dict]:
     q = normalize(question)
 
-    if any(
-        expression in q
-        for expression in [
-            "pas trop sucre",
-            "peu sucre",
-            "faiblement sucre",
-            "moins sucre",
-            "peu de sucre",
-            "faible sucrosite",
-        ]
-    ):
+    def make_filter(operator: str, value: int) -> list[dict]:
         return [{
             "column": "sucrosite",
             "label": "sucrosité",
-            "operator": "<=",
-            "value": Decimal("3"),
+            "operator": operator,
+            "value": Decimal(str(value)),
         }]
+
+    # Niveau 1 : absence ou très faible sucrosité
+    very_low = [
+        "sans sucre",
+        "non sucre",
+        "pas sucre",
+        "tres peu sucre",
+        "extremement peu sucre",
+        "sucrosite minimale",
+        "sucrosite de 1",
+        "niveau de sucre 1",
+    ]
+
+    # Niveaux 1 à 3 : faible sucrosité
+    low = [
+        "pas trop sucre",
+        "peu sucre",
+        "faiblement sucre",
+        "moins sucre",
+        "peu de sucre",
+        "faible sucrosite",
+        "legerement sucre",
+        "sucrosite faible",
+    ]
+
+    # Niveau 3 : sucrosité moyenne
+    medium = [
+        "moyennement sucre",
+        "equilibre en sucre",
+        "sucrosite moyenne",
+        "niveau de sucre moyen",
+        "sucrosite de 3",
+        "niveau de sucre 3",
+    ]
+
+    # Niveaux 4 à 5 : forte sucrosité
+    high = [
+        "bien sucre",
+        "tres sucre",
+        "fortement sucre",
+        "beaucoup de sucre",
+        "forte sucrosite",
+        "arome sucre",
+        "arome tres sucre",
+        "plutot sucre",
+        "plus sucre",
+        "sucrosite elevee",
+        "sucrosite forte",
+        "sucrosite de 4",
+        "niveau de sucre 4",
+    ]
+
+    # Niveau 5 : sucrosité maximale
+    very_high = [
+        "extremement sucre",
+        "tres fortement sucre",
+        "tres riche en sucre",
+        "sucrosite maximale",
+        "sucrosite de 5",
+        "niveau de sucre 5",
+    ]
+
+    # Priorité aux expressions les plus précises
+    if any(expression in q for expression in very_low):
+        return make_filter("<=", 1)
+
+    if any(expression in q for expression in very_high):
+        return make_filter("=", 5)
+
+    if any(expression in q for expression in medium):
+        return make_filter("=", 3)
+
+    if any(expression in q for expression in low):
+        return make_filter("<=", 3)
+
+    if any(expression in q for expression in high):
+        return make_filter(">=", 4)
+
+    # Détection générique d'une demande sucrée
+    if re.search(r"\bsucre\b", q):
+        return make_filter(">=", 4)
 
     return []
 
@@ -394,9 +464,9 @@ def search_catalogue(
     application = detect_application(question)
     numeric_filters = detect_numeric_filters(question)
 
-    # Ajout du raccourci "pas trop sucré".
     sweetness_filters = detect_sweetness_filter(question)
 
+    # Un filtre numérique explicitement demandé est prioritaire.
     if not any(
         item["column"] == "sucrosite"
         for item in numeric_filters
@@ -405,7 +475,12 @@ def search_catalogue(
 
     heat_filter = detect_heat_filter(question)
 
-    if not family and not application and not numeric_filters and not heat_filter:
+    if not any([
+        family,
+        application,
+        numeric_filters,
+        heat_filter,
+    ]):
         return [], None, None, []
 
     conn = None
@@ -417,11 +492,12 @@ def search_catalogue(
             query = "SELECT * FROM public.food_aromas WHERE 1=1"
             params = []
 
+            # Filtre famille
             if family:
                 query += " AND famille ILIKE %s"
                 params.append(family)
 
-            # applications est un tableau PostgreSQL text[].
+            # Filtre application
             if application:
                 query += """
                     AND EXISTS (
@@ -432,6 +508,7 @@ def search_catalogue(
                 """
                 params.append(f"%{application}%")
 
+            # Filtres numériques
             allowed_columns = {
                 "sucrosite",
                 "prix_indicatif_eur_kg",
@@ -456,11 +533,46 @@ def search_catalogue(
                 query += f" AND {column} {operator} %s"
                 params.append(criterion["value"])
 
+            # Filtre strict de tenue à la chaleur
             if heat_filter:
-                query += " AND normalize(tenue_chaleur, NFD) ILIKE %s"
+                query += " AND tenue_chaleur = %s"
                 params.append(heat_filter)
 
-            query += " ORDER BY nom LIMIT %s"
+            # Classement selon la préférence de sucrosité
+            order_parts = []
+
+            if heat_filter:
+                order_parts.append("""
+                    CASE
+                        WHEN tenue_chaleur = 'élevée' THEN 0
+                        ELSE 1
+                    END
+                """)
+
+            sweetness_criterion = next(
+                (
+                    item for item in numeric_filters
+                    if item["column"] == "sucrosite"
+                ),
+                None,
+            )
+
+            if sweetness_criterion:
+                operator = sweetness_criterion["operator"]
+
+                if operator in (">", ">="):
+                    order_parts.append(
+                        "sucrosite DESC NULLS LAST"
+                    )
+                else:
+                    order_parts.append(
+                        "sucrosite ASC NULLS LAST"
+                    )
+
+            order_parts.append("nom ASC")
+
+            query += " ORDER BY " + ", ".join(order_parts)
+            query += " LIMIT %s"
             params.append(top_k)
 
             cursor.execute(query, params)
@@ -660,6 +772,7 @@ def format_catalogue_answer(
     family: str | None,
     application: str | None,
     numeric_filters: list[dict],
+    heat_filter: str | None = None,
 ) -> str:
 
     if not rows:
@@ -676,6 +789,11 @@ def format_catalogue_answer(
                 f"{criterion['label']} "
                 f"{criterion['operator']} "
                 f"{criterion['value']}"
+            )
+
+        if heat_filter:
+            criteria.append(
+                f"une tenue à la chaleur {heat_filter}"
             )
 
         if not criteria:
@@ -707,6 +825,12 @@ def format_catalogue_answer(
                 f"{criterion['operator']} "
                 f"{criterion['value']}"
             )
+
+    if heat_filter:
+        lines.extend([
+            "",
+            f"**Tenue à la chaleur exigée : {heat_filter}.**",
+        ])
 
     for index, row in enumerate(rows, start=1):
         lines.extend([
@@ -857,8 +981,10 @@ def ask(req: SearchRequest):
         req.top_k,
     )
 
+    heat_filter = detect_heat_filter(conversation)
+
     # CAS 1 : critère numérique ou technique détecté.
-    if numeric_filters or detect_heat_filter(conversation):
+    if numeric_filters or heat_filter:
         sources = [
             build_source(row)
             for row in rows
@@ -869,6 +995,7 @@ def ask(req: SearchRequest):
             family,
             application,
             numeric_filters,
+            heat_filter,
         )
 
         return {
@@ -922,6 +1049,7 @@ def ask(req: SearchRequest):
         family,
         application,
         numeric_filters,
+        heat_filter,
     )
 
     return {
