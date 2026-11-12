@@ -100,6 +100,7 @@ def chat(messages: list[dict]) -> str:
     response = ollama.chat(
         model=config.LLM_MODEL,
         messages=messages,
+        think=False,
         options={"temperature": 0},
     )
 

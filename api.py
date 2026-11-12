@@ -2,6 +2,7 @@
 """API Olfactive Studio : PostgreSQL + ChromaDB + Ollama."""
 
 import json
+import logging
 import re
 import unicodedata
 from decimal import Decimal, InvalidOperation
@@ -15,10 +16,26 @@ import rag
 from database import get_connection
 
 
+# --------------------------------------------------
+# JOURNALISATION
+# --------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+)
+
+logger = logging.getLogger("olfactive_studio")
+
+
+# --------------------------------------------------
+# APPLICATION
+# --------------------------------------------------
+
 app = FastAPI(
     title="Olfactive Studio API",
     description="Assistant aromatique conversationnel avec RAG.",
-    version="5.0.0",
+    version="6.0.0",
 )
 
 
@@ -48,7 +65,7 @@ class AromaSource(BaseModel):
 # --------------------------------------------------
 
 def normalize(text: str) -> str:
-    text = unicodedata.normalize("NFD", text.lower())
+    text = unicodedata.normalize("NFD", str(text).lower())
 
     return "".join(
         char
@@ -95,6 +112,9 @@ def has_sensory_preference(text: str) -> bool:
         "puissant",
         "floral",
         "epice",
+        "sale",
+        "gourmand",
+        "frais",
     ]
 
     return any(word in q for word in preferences)
@@ -108,21 +128,49 @@ def detect_family(question: str) -> str | None:
     q = normalize(question)
 
     families = {
-        "agrum": "Agrume",
-        "fruit rouge": "Fruit rouge",
-        "fruits rouges": "Fruit rouge",
-        "fruit exotique": "Fruit exotique",
-        "fruits exotiques": "Fruit exotique",
-        "gourmand": "Gourmande",
-        "floral": "Florale",
-        "fleur": "Florale",
-        "epice": "Épicée",
-        "menthol": "Mentholée",
+        "fruits rouges": "Fruits rouges",
+        "fruit rouge": "Fruits rouges",
+        "fraise": "Fruits rouges",
+        "framboise": "Fruits rouges",
+        "cerise": "Fruits rouges",
+
+        "fruits tropicaux": "Fruits tropicaux",
+        "fruit tropical": "Fruits tropicaux",
+        "fruit exotique": "Fruits tropicaux",
+        "fruits exotiques": "Fruits tropicaux",
+        "exotique": "Fruits tropicaux",
+        "mangue": "Fruits tropicaux",
+        "ananas": "Fruits tropicaux",
+        "passion": "Fruits tropicaux",
+
+        "agrum": "Agrumes",
+        "citron": "Agrumes",
+        "orange": "Agrumes",
+        "pamplemousse": "Agrumes",
+        "mandarine": "Agrumes",
+
+        "gourmand": "Notes gourmandes",
+        "vanille": "Notes gourmandes",
+        "caramel": "Notes gourmandes",
+        "chocolat": "Notes gourmandes",
+        "biscuit": "Notes gourmandes",
+
+        "epice": "Herbes et épices",
+        "herbe": "Herbes et épices",
+        "gingembre": "Herbes et épices",
+        "cardamome": "Herbes et épices",
+        "cannelle": "Herbes et épices",
+        "poivre": "Herbes et épices",
+
+        "sale": "Notes salées",
+        "umami": "Notes salées",
+        "bouillon": "Notes salées",
     }
 
-    for keyword, family in families.items():
+    # Les mots-clés les plus longs sont testés en premier.
+    for keyword in sorted(families, key=len, reverse=True):
         if keyword in q:
-            return family
+            return families[keyword]
 
     return None
 
@@ -135,18 +183,70 @@ def detect_application(question: str) -> str | None:
     q = normalize(question)
 
     applications = {
-        "boisson": "boisson",
-        "biscuit": "biscuit",
+        "boisson": "boissons",
+        "biscuit": "biscuits",
         "confiserie": "confiserie",
-        "dessert": "dessert",
-        "yaourt": "yaourt",
-        "produit laitier": "laitier",
-        "glace": "glace",
+        "dessert": "desserts",
+        "yaourt": "produits laitiers",
+        "produit laitier": "produits laitiers",
+        "glace": "glaces",
     }
 
-    for keyword, application in applications.items():
+    for keyword in sorted(applications, key=len, reverse=True):
         if keyword in q:
-            return application
+            return applications[keyword]
+
+    return None
+
+
+# --------------------------------------------------
+# DÉTECTION DE LA SUCROSITÉ
+# --------------------------------------------------
+
+def detect_sweetness_filter(question: str) -> list[dict]:
+    q = normalize(question)
+
+    if any(
+        expression in q
+        for expression in [
+            "pas trop sucre",
+            "peu sucre",
+            "faiblement sucre",
+            "moins sucre",
+            "peu de sucre",
+            "faible sucrosite",
+        ]
+    ):
+        return [{
+            "column": "sucrosite",
+            "label": "sucrosité",
+            "operator": "<=",
+            "value": Decimal("3"),
+        }]
+
+    return []
+
+
+# --------------------------------------------------
+# DÉTECTION DE LA TENUE À LA CHALEUR
+# --------------------------------------------------
+
+def detect_heat_filter(question: str) -> str | None:
+    q = normalize(question)
+
+    heat_keywords = [
+        "pasteurise",
+        "pasteurisation",
+        "cuisson",
+        "haute temperature",
+        "haute chaleur",
+        "resistant a la chaleur",
+        "resistance a la chaleur",
+        "tenue a la chaleur",
+    ]
+
+    if any(keyword in q for keyword in heat_keywords):
+        return "élevée"
 
     return None
 
@@ -154,9 +254,6 @@ def detect_application(question: str) -> str | None:
 # --------------------------------------------------
 # DÉTECTION DES CRITÈRES NUMÉRIQUES
 # --------------------------------------------------
-
-# Les colonnes SQL sont définies ici : elles ne viennent
-# jamais directement du texte fourni par l'utilisateur.
 
 NUMERIC_FIELDS = {
     "sucrosite": {
@@ -227,25 +324,10 @@ OPERATORS = [
 
 
 def detect_numeric_filters(question: str) -> list[dict]:
-    """
-    Extrait les critères numériques exprimés par le client.
-
-    Exemple :
-    'sucrosité supérieure à 4'
-    devient :
-    {
-        'column': 'sucrosite',
-        'label': 'sucrosité',
-        'operator': '>',
-        'value': Decimal('4')
-    }
-    """
-
     q = normalize(question)
     filters = []
 
     for field in NUMERIC_FIELDS.values():
-
         aliases = sorted(
             field["aliases"],
             key=len,
@@ -253,7 +335,6 @@ def detect_numeric_filters(question: str) -> list[dict]:
         )
 
         for alias in aliases:
-
             alias_pattern = (
                 r"(?<!\w)"
                 + re.escape(alias)
@@ -261,7 +342,6 @@ def detect_numeric_filters(question: str) -> list[dict]:
             )
 
             for operator_pattern, sql_operator in OPERATORS:
-
                 pattern = (
                     alias_pattern
                     + r"\s*(?:est\s*)?"
@@ -290,7 +370,6 @@ def detect_numeric_filters(question: str) -> list[dict]:
                     "value": value,
                 })
 
-                # Un seul critère détecté par champ.
                 break
 
             if any(
@@ -315,7 +394,18 @@ def search_catalogue(
     application = detect_application(question)
     numeric_filters = detect_numeric_filters(question)
 
-    if not family and not application and not numeric_filters:
+    # Ajout du raccourci "pas trop sucré".
+    sweetness_filters = detect_sweetness_filter(question)
+
+    if not any(
+        item["column"] == "sucrosite"
+        for item in numeric_filters
+    ):
+        numeric_filters.extend(sweetness_filters)
+
+    heat_filter = detect_heat_filter(question)
+
+    if not family and not application and not numeric_filters and not heat_filter:
         return [], None, None, []
 
     conn = None
@@ -324,38 +414,38 @@ def search_catalogue(
         conn = get_connection()
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-
-            query = "SELECT * FROM aromes WHERE 1=1"
+            query = "SELECT * FROM public.food_aromas WHERE 1=1"
             params = []
 
             if family:
                 query += " AND famille ILIKE %s"
-                params.append(f"%{family}%")
+                params.append(family)
 
+            # applications est un tableau PostgreSQL text[].
             if application:
-                query += " AND applications ILIKE %s"
+                query += """
+                    AND EXISTS (
+                        SELECT 1
+                        FROM unnest(applications) AS app
+                        WHERE app ILIKE %s
+                    )
+                """
                 params.append(f"%{application}%")
 
-            for criterion in numeric_filters:
+            allowed_columns = {
+                "sucrosite",
+                "prix_indicatif_eur_kg",
+                "delai_jours",
+                "volume_minimum_kg",
+            }
 
-                # Colonnes et opérateurs issus de listes contrôlées.
+            allowed_operators = {
+                ">", "<", ">=", "<=", "=",
+            }
+
+            for criterion in numeric_filters:
                 column = criterion["column"]
                 operator = criterion["operator"]
-
-                allowed_columns = {
-                    "sucrosite",
-                    "prix_indicatif_eur_kg",
-                    "delai_jours",
-                    "volume_minimum_kg",
-                }
-
-                allowed_operators = {
-                    ">",
-                    "<",
-                    ">=",
-                    "<=",
-                    "=",
-                }
 
                 if (
                     column not in allowed_columns
@@ -365,6 +455,10 @@ def search_catalogue(
 
                 query += f" AND {column} {operator} %s"
                 params.append(criterion["value"])
+
+            if heat_filter:
+                query += " AND normalize(tenue_chaleur, NFD) ILIKE %s"
+                params.append(heat_filter)
 
             query += " ORDER BY nom LIMIT %s"
             params.append(top_k)
@@ -380,9 +474,11 @@ def search_catalogue(
         )
 
     except Exception as exc:
+        logger.exception("Erreur pendant la recherche PostgreSQL")
+
         raise HTTPException(
             status_code=503,
-            detail=f"Erreur PostgreSQL : {exc}",
+            detail="Erreur lors de la recherche dans PostgreSQL.",
         ) from exc
 
     finally:
@@ -419,12 +515,13 @@ Tu es le conseiller aromatique d'Olfactive Studio.
 Ton rôle est de guider le client pour comprendre son besoin
 avant de présenter les arômes disponibles.
 
-Tu dois progressivement identifier :
-- Le produit alimentaire concerné.
-- La famille aromatique recherchée.
-- Le profil sensoriel souhaité.
-- Les contraintes techniques éventuelles.
-- Le budget si nécessaire.
+Les familles du catalogue sont exclusivement :
+- Agrumes
+- Fruits rouges
+- Fruits tropicaux
+- Herbes et épices
+- Notes gourmandes
+- Notes salées
 
 RÈGLES :
 1. Analyse toute la conversation.
@@ -434,9 +531,11 @@ RÈGLES :
 5. Ne suppose jamais les préférences du client.
 6. N'invente aucune caractéristique.
 7. Ne recommande aucun arôme absent du catalogue.
-8. Si le besoin est suffisamment précis, indique que
-   les candidats peuvent être présentés.
-9. Réponds naturellement et en français.
+8. Ne propose pas une famille incompatible avec la demande du client.
+9. Ne présente pas une famille comme compatible sans élément dans la demande.
+10. Les données techniques et commerciales doivent provenir du catalogue.
+11. Si le besoin est suffisamment précis, indique que les candidats peuvent être présentés.
+12. Réponds naturellement et en français.
 
 Retourne obligatoirement un JSON valide, sans Markdown.
 
@@ -476,13 +575,19 @@ Si le besoin est suffisamment précis :
     })
 
     try:
+        logger.info("[QWEN] Appel du modèle %s", config.LLM_MODEL)
+
         response = rag.chat(messages)
+
+        logger.info("[QWEN] Réponse reçue.")
 
         start = response.find("{")
         end = response.rfind("}")
 
         if start == -1 or end == -1:
-            raise ValueError("JSON absent")
+            raise ValueError(
+                f"JSON absent. Réponse reçue : {response}"
+            )
 
         result = json.loads(response[start:end + 1])
 
@@ -507,16 +612,15 @@ Si le besoin est suffisamment précis :
                 "question": "",
             }
 
-        raise ValueError("Statut invalide")
+        raise ValueError(f"Statut invalide : {status}")
 
-    except Exception:
-        return {
-            "status": "needs_clarification",
-            "question": (
-                "Pouvez-vous préciser le type de produit alimentaire "
-                "dans lequel vous souhaitez utiliser cet arôme ?"
-            ),
-        }
+    except Exception as exc:
+        logger.exception("[ERREUR QWEN] Échec de la génération")
+
+        raise HTTPException(
+            status_code=502,
+            detail="Le modèle Qwen n'a pas pu traiter la demande.",
+        ) from exc
 
 
 # --------------------------------------------------
@@ -524,7 +628,6 @@ Si le besoin est suffisamment précis :
 # --------------------------------------------------
 
 def build_source(row: dict) -> AromaSource:
-
     text = (
         f"Arôme : {row['nom']}. "
         f"Famille : {row['famille']}. "
@@ -535,12 +638,13 @@ def build_source(row: dict) -> AromaSource:
         f"Certifications : {row['certifications']}. "
         f"Prix indicatif : {row['prix_indicatif_eur_kg']} euros/kg. "
         f"Délai : {row['delai_jours']} jours. "
-        f"Volume minimum : {row['volume_minimum_kg']} kg."
+        f"Volume minimum : {row['volume_minimum_kg']} kg. "
+        f"Source : {row['source_information']}."
     )
 
     return AromaSource(
         source_type="arome",
-        source_id=str(row["id"]),
+        source_id=str(row["aroma_id"]),
         is_synthetic=bool(row["is_synthetic"]),
         text=text,
         score=1.0,
@@ -559,7 +663,6 @@ def format_catalogue_answer(
 ) -> str:
 
     if not rows:
-
         criteria = []
 
         if family:
@@ -606,7 +709,6 @@ def format_catalogue_answer(
             )
 
     for index, row in enumerate(rows, start=1):
-
         lines.extend([
             "",
             f"### {index}. {row['nom']}",
@@ -619,6 +721,7 @@ def format_catalogue_answer(
             f"- Prix indicatif : {row['prix_indicatif_eur_kg']} €/kg",
             f"- Délai : {row['delai_jours']} jours",
             f"- Volume minimum : {row['volume_minimum_kg']} kg",
+            f"- Source : {row['source_information']}",
         ])
 
     if any(bool(row["is_synthetic"]) for row in rows):
@@ -645,10 +748,10 @@ def format_catalogue_answer(
 
 @app.get("/health", tags=["Système"])
 def health():
-
     try:
         count = rag.get_collection().count()
     except Exception:
+        logger.exception("Impossible de vérifier ChromaDB")
         count = None
 
     return {
@@ -665,15 +768,13 @@ def get_aromes(
     famille: str | None = None,
     application: str | None = None,
 ):
-
     conn = None
 
     try:
         conn = get_connection()
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-
-            query = "SELECT * FROM aromes WHERE 1=1"
+            query = "SELECT * FROM public.food_aromas WHERE 1=1"
             params = []
 
             if famille:
@@ -681,7 +782,13 @@ def get_aromes(
                 params.append(f"%{famille}%")
 
             if application:
-                query += " AND applications ILIKE %s"
+                query += """
+                    AND EXISTS (
+                        SELECT 1
+                        FROM unnest(applications) AS app
+                        WHERE app ILIKE %s
+                    )
+                """
                 params.append(f"%{application}%")
 
             query += " ORDER BY nom"
@@ -691,9 +798,11 @@ def get_aromes(
             return [dict(row) for row in cursor.fetchall()]
 
     except Exception as exc:
+        logger.exception("Impossible de lire le catalogue")
+
         raise HTTPException(
             status_code=503,
-            detail=f"Impossible de lire le catalogue : {exc}",
+            detail="Impossible de lire le catalogue.",
         ) from exc
 
     finally:
@@ -707,7 +816,6 @@ def get_aromes(
     tags=["RAG aromatique"],
 )
 def search(req: SearchRequest):
-
     try:
         documents = rag.search_documents(
             req.question,
@@ -729,15 +837,16 @@ def search(req: SearchRequest):
         ]
 
     except Exception as exc:
+        logger.exception("Erreur pendant la recherche ChromaDB")
+
         raise HTTPException(
             status_code=503,
-            detail=f"Erreur ChromaDB : {exc}",
+            detail="Erreur lors de la recherche dans ChromaDB.",
         ) from exc
 
 
 @app.post("/ask", tags=["Assistant conversationnel"])
 def ask(req: SearchRequest):
-
     conversation = get_conversation_text(
         req.question,
         req.history,
@@ -748,12 +857,8 @@ def ask(req: SearchRequest):
         req.top_k,
     )
 
-    # CAS 1 : présence d'un critère numérique.
-    # On applique directement le filtre SQL.
-    # Aucune question sensorielle n'est nécessaire.
-
-    if numeric_filters:
-
+    # CAS 1 : critère numérique ou technique détecté.
+    if numeric_filters or detect_heat_filter(conversation):
         sources = [
             build_source(row)
             for row in rows
@@ -777,11 +882,8 @@ def ask(req: SearchRequest):
             ],
         }
 
-    # CAS 2 : demande classique sans critère numérique.
-    # On vérifie la présence d'une préférence sensorielle.
-
+    # CAS 2 : aucune préférence sensorielle détectée.
     if not has_sensory_preference(conversation):
-
         return {
             "question": req.question,
             "status": "needs_clarification",
@@ -793,8 +895,7 @@ def ask(req: SearchRequest):
             "sources": [],
         }
 
-    # CAS 3 : le LLM guide la conversation.
-
+    # CAS 3 : appel à Qwen pour guider la conversation.
     guidance = generate_client_guidance(
         req.question,
         req.history,
@@ -802,7 +903,6 @@ def ask(req: SearchRequest):
     )
 
     if guidance["status"] == "needs_clarification":
-
         return {
             "question": req.question,
             "status": "needs_clarification",
@@ -811,8 +911,7 @@ def ask(req: SearchRequest):
             "sources": [],
         }
 
-    # CAS 4 : présentation des données du catalogue.
-
+    # CAS 4 : présentation des résultats du catalogue.
     sources = [
         build_source(row)
         for row in rows
@@ -837,12 +936,16 @@ def ask(req: SearchRequest):
     }
 
 
+# --------------------------------------------------
+# LANCEMENT
+# --------------------------------------------------
+
 if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
         "api:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8001,
         reload=True,
     )
