@@ -2,7 +2,9 @@
 """API Olfactive Studio : PostgreSQL + ChromaDB + Ollama."""
 
 import json
+import re
 import unicodedata
+from decimal import Decimal, InvalidOperation
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -16,7 +18,7 @@ from database import get_connection
 app = FastAPI(
     title="Olfactive Studio API",
     description="Assistant aromatique conversationnel avec RAG.",
-    version="4.1.0",
+    version="5.0.0",
 )
 
 
@@ -37,7 +39,7 @@ class AromaSource(BaseModel):
     text: str
     score: float = Field(
         ...,
-        description="Similarité cosinus (1 = identique)",
+        description="Score associé à la source",
     )
 
 
@@ -75,7 +77,7 @@ def get_conversation_text(
 
 
 # --------------------------------------------------
-# DÉTECTION DES PRÉFÉRENCES
+# DÉTECTION DES PRÉFÉRENCES SENSORIELLES
 # --------------------------------------------------
 
 def has_sensory_preference(text: str) -> bool:
@@ -91,7 +93,6 @@ def has_sensory_preference(text: str) -> bool:
         "intense",
         "leger",
         "puissant",
-        "frais",
         "floral",
         "epice",
     ]
@@ -100,7 +101,7 @@ def has_sensory_preference(text: str) -> bool:
 
 
 # --------------------------------------------------
-# DÉTECTION DES CRITÈRES DU CATALOGUE
+# DÉTECTION DE LA FAMILLE
 # --------------------------------------------------
 
 def detect_family(question: str) -> str | None:
@@ -126,6 +127,10 @@ def detect_family(question: str) -> str | None:
     return None
 
 
+# --------------------------------------------------
+# DÉTECTION DE L'APPLICATION
+# --------------------------------------------------
+
 def detect_application(question: str) -> str | None:
     q = normalize(question)
 
@@ -147,19 +152,171 @@ def detect_application(question: str) -> str | None:
 
 
 # --------------------------------------------------
+# DÉTECTION DES CRITÈRES NUMÉRIQUES
+# --------------------------------------------------
+
+# Les colonnes SQL sont définies ici : elles ne viennent
+# jamais directement du texte fourni par l'utilisateur.
+
+NUMERIC_FIELDS = {
+    "sucrosite": {
+        "column": "sucrosite",
+        "label": "sucrosité",
+        "aliases": ["sucrosite"],
+    },
+    "prix_indicatif_eur_kg": {
+        "column": "prix_indicatif_eur_kg",
+        "label": "prix",
+        "aliases": [
+            "prix au kilo",
+            "prix par kilo",
+            "prix au kg",
+            "prix par kg",
+            "prix",
+        ],
+    },
+    "delai_jours": {
+        "column": "delai_jours",
+        "label": "délai",
+        "aliases": ["delai", "delais"],
+    },
+    "volume_minimum_kg": {
+        "column": "volume_minimum_kg",
+        "label": "volume minimum",
+        "aliases": [
+            "volume minimum",
+            "volume minimal",
+            "quantite minimale",
+            "quantite minimum",
+        ],
+    },
+}
+
+
+OPERATORS = [
+    (r">=", ">="),
+    (r"<=", "<="),
+    (r">", ">"),
+    (r"<", "<"),
+    (r"=", "="),
+    (
+        r"(?:superieur(?:e)?\s+ou\s+egal(?:e)?\s+a"
+        r"|au\s+moins|minimum\s+de)",
+        ">=",
+    ),
+    (
+        r"(?:inferieur(?:e)?\s+ou\s+egal(?:e)?\s+a"
+        r"|au\s+plus|maximum\s+de)",
+        "<=",
+    ),
+    (
+        r"(?:strictement\s+)?superieur(?:e)?\s+a"
+        r"|plus\s+de|au-dessus\s+de",
+        ">",
+    ),
+    (
+        r"(?:strictement\s+)?inferieur(?:e)?\s+a"
+        r"|moins\s+de|en-dessous\s+de",
+        "<",
+    ),
+    (
+        r"(?:egal(?:e)?\s+a|exactement)",
+        "=",
+    ),
+]
+
+
+def detect_numeric_filters(question: str) -> list[dict]:
+    """
+    Extrait les critères numériques exprimés par le client.
+
+    Exemple :
+    'sucrosité supérieure à 4'
+    devient :
+    {
+        'column': 'sucrosite',
+        'label': 'sucrosité',
+        'operator': '>',
+        'value': Decimal('4')
+    }
+    """
+
+    q = normalize(question)
+    filters = []
+
+    for field in NUMERIC_FIELDS.values():
+
+        aliases = sorted(
+            field["aliases"],
+            key=len,
+            reverse=True,
+        )
+
+        for alias in aliases:
+
+            alias_pattern = (
+                r"(?<!\w)"
+                + re.escape(alias)
+                + r"(?!\w)"
+            )
+
+            for operator_pattern, sql_operator in OPERATORS:
+
+                pattern = (
+                    alias_pattern
+                    + r"\s*(?:est\s*)?"
+                    + r"(?:"
+                    + operator_pattern
+                    + r")"
+                    + r"\s*(-?\d+(?:[.,]\d+)?)"
+                )
+
+                match = re.search(pattern, q)
+
+                if not match:
+                    continue
+
+                raw_value = match.group(1).replace(",", ".")
+
+                try:
+                    value = Decimal(raw_value)
+                except InvalidOperation:
+                    continue
+
+                filters.append({
+                    "column": field["column"],
+                    "label": field["label"],
+                    "operator": sql_operator,
+                    "value": value,
+                })
+
+                # Un seul critère détecté par champ.
+                break
+
+            if any(
+                item["column"] == field["column"]
+                for item in filters
+            ):
+                break
+
+    return filters
+
+
+# --------------------------------------------------
 # RECHERCHE POSTGRESQL
 # --------------------------------------------------
 
 def search_catalogue(
     question: str,
     top_k: int,
-) -> tuple[list[dict], str | None, str | None]:
+) -> tuple[list[dict], str | None, str | None, list[dict]]:
 
     family = detect_family(question)
     application = detect_application(question)
+    numeric_filters = detect_numeric_filters(question)
 
-    if not family and not application:
-        return [], None, None
+    if not family and not application and not numeric_filters:
+        return [], None, None, []
 
     conn = None
 
@@ -167,6 +324,7 @@ def search_catalogue(
         conn = get_connection()
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+
             query = "SELECT * FROM aromes WHERE 1=1"
             params = []
 
@@ -178,13 +336,48 @@ def search_catalogue(
                 query += " AND applications ILIKE %s"
                 params.append(f"%{application}%")
 
+            for criterion in numeric_filters:
+
+                # Colonnes et opérateurs issus de listes contrôlées.
+                column = criterion["column"]
+                operator = criterion["operator"]
+
+                allowed_columns = {
+                    "sucrosite",
+                    "prix_indicatif_eur_kg",
+                    "delai_jours",
+                    "volume_minimum_kg",
+                }
+
+                allowed_operators = {
+                    ">",
+                    "<",
+                    ">=",
+                    "<=",
+                    "=",
+                }
+
+                if (
+                    column not in allowed_columns
+                    or operator not in allowed_operators
+                ):
+                    continue
+
+                query += f" AND {column} {operator} %s"
+                params.append(criterion["value"])
+
             query += " ORDER BY nom LIMIT %s"
             params.append(top_k)
 
             cursor.execute(query, params)
             rows = cursor.fetchall()
 
-        return [dict(row) for row in rows], family, application
+        return (
+            [dict(row) for row in rows],
+            family,
+            application,
+            numeric_filters,
+        )
 
     except Exception as exc:
         raise HTTPException(
@@ -297,7 +490,10 @@ Si le besoin est suffisamment précis :
         clarification = result.get("question", "")
 
         if status == "needs_clarification":
-            if not isinstance(clarification, str) or not clarification.strip():
+            if (
+                not isinstance(clarification, str)
+                or not clarification.strip()
+            ):
                 raise ValueError("Question absente")
 
             return {
@@ -328,6 +524,7 @@ Si le besoin est suffisamment précis :
 # --------------------------------------------------
 
 def build_source(row: dict) -> AromaSource:
+
     text = (
         f"Arôme : {row['nom']}. "
         f"Famille : {row['famille']}. "
@@ -351,16 +548,18 @@ def build_source(row: dict) -> AromaSource:
 
 
 # --------------------------------------------------
-# FORMATAGE DES RECOMMANDATIONS
+# FORMATAGE DES RÉSULTATS
 # --------------------------------------------------
 
 def format_catalogue_answer(
     rows: list[dict],
     family: str | None,
     application: str | None,
+    numeric_filters: list[dict],
 ) -> str:
 
     if not rows:
+
         criteria = []
 
         if family:
@@ -369,6 +568,13 @@ def format_catalogue_answer(
         if application:
             criteria.append(f"l'application {application}")
 
+        for criterion in numeric_filters:
+            criteria.append(
+                f"{criterion['label']} "
+                f"{criterion['operator']} "
+                f"{criterion['value']}"
+            )
+
         if not criteria:
             return (
                 "Je n'ai trouvé aucun candidat correspondant "
@@ -376,9 +582,9 @@ def format_catalogue_answer(
             )
 
         return (
-            "Je n'ai trouvé aucun arôme correspondant à "
-            + " et ".join(criteria)
-            + " dans le catalogue."
+            "Aucun arôme ne correspond aux critères suivants : "
+            + ", ".join(criteria)
+            + "."
         )
 
     lines = [
@@ -386,7 +592,21 @@ def format_catalogue_answer(
         "identifiés dans le catalogue :"
     ]
 
+    if numeric_filters:
+        lines.extend([
+            "",
+            "**Critères numériques appliqués :**",
+        ])
+
+        for criterion in numeric_filters:
+            lines.append(
+                f"- {criterion['label']} "
+                f"{criterion['operator']} "
+                f"{criterion['value']}"
+            )
+
     for index, row in enumerate(rows, start=1):
+
         lines.extend([
             "",
             f"### {index}. {row['nom']}",
@@ -425,6 +645,7 @@ def format_catalogue_answer(
 
 @app.get("/health", tags=["Système"])
 def health():
+
     try:
         count = rag.get_collection().count()
     except Exception:
@@ -444,12 +665,14 @@ def get_aromes(
     famille: str | None = None,
     application: str | None = None,
 ):
+
     conn = None
 
     try:
         conn = get_connection()
 
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+
             query = "SELECT * FROM aromes WHERE 1=1"
             params = []
 
@@ -464,6 +687,7 @@ def get_aromes(
             query += " ORDER BY nom"
 
             cursor.execute(query, params)
+
             return [dict(row) for row in cursor.fetchall()]
 
     except Exception as exc:
@@ -483,6 +707,7 @@ def get_aromes(
     tags=["RAG aromatique"],
 )
 def search(req: SearchRequest):
+
     try:
         documents = rag.search_documents(
             req.question,
@@ -518,13 +743,45 @@ def ask(req: SearchRequest):
         req.history,
     )
 
-    rows, family, application = search_catalogue(
+    rows, family, application, numeric_filters = search_catalogue(
         conversation,
         req.top_k,
     )
 
-    # Première étape : demander le profil sensoriel.
+    # CAS 1 : présence d'un critère numérique.
+    # On applique directement le filtre SQL.
+    # Aucune question sensorielle n'est nécessaire.
+
+    if numeric_filters:
+
+        sources = [
+            build_source(row)
+            for row in rows
+        ]
+
+        answer = format_catalogue_answer(
+            rows,
+            family,
+            application,
+            numeric_filters,
+        )
+
+        return {
+            "question": req.question,
+            "status": "recommendations_ready",
+            "answer": answer,
+            "model": config.LLM_MODEL,
+            "sources": [
+                source.model_dump()
+                for source in sources
+            ],
+        }
+
+    # CAS 2 : demande classique sans critère numérique.
+    # On vérifie la présence d'une préférence sensorielle.
+
     if not has_sensory_preference(conversation):
+
         return {
             "question": req.question,
             "status": "needs_clarification",
@@ -536,8 +793,8 @@ def ask(req: SearchRequest):
             "sources": [],
         }
 
-    # Deuxième étape : laisser le LLM identifier les autres
-    # informations manquantes.
+    # CAS 3 : le LLM guide la conversation.
+
     guidance = generate_client_guidance(
         req.question,
         req.history,
@@ -545,6 +802,7 @@ def ask(req: SearchRequest):
     )
 
     if guidance["status"] == "needs_clarification":
+
         return {
             "question": req.question,
             "status": "needs_clarification",
@@ -553,7 +811,8 @@ def ask(req: SearchRequest):
             "sources": [],
         }
 
-    # Troisième étape : présenter les données du catalogue.
+    # CAS 4 : présentation des données du catalogue.
+
     sources = [
         build_source(row)
         for row in rows
@@ -563,6 +822,7 @@ def ask(req: SearchRequest):
         rows,
         family,
         application,
+        numeric_filters,
     )
 
     return {
